@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torchvision
 
-
 def get_model(name, num_classes=100):
     n = name.lower()
     if n in ('resnet18', 'resnet18_timm', 'resnet18_tv'):
@@ -10,7 +9,6 @@ def get_model(name, num_classes=100):
         m.fc = nn.Linear(m.fc.in_features, num_classes)
         return m
     raise ValueError('unknown imagenet100 model: ' + name)
-
 
 def load_checkpoint(model, ckpt_path):
     ck = torch.load(ckpt_path, map_location='cpu', weights_only=False)
@@ -21,7 +19,7 @@ def load_checkpoint(model, ckpt_path):
                 sd = ck[k]
                 break
     new = {}
-    for k, v in sd.items():
+    for (k, v) in sd.items():
         for pref in ('module.', '_orig_mod.'):
             if k.startswith(pref):
                 k = k[len(pref):]

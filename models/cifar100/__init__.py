@@ -1,17 +1,43 @@
 import torch
 import torch.nn as nn
 
+class _LogitsOnly(nn.Module):
 
-def get_model(name, num_classes=100):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x):
+        out = self.model(x)
+        if isinstance(out, tuple):
+            return out[0]
+        return out
+
+def get_model(name, num_classes=100, norm='bn'):
     n = name.lower()
+    if n in ('cifar_wrn_28_10_ln', 'wrn_28_10_ln'):
+        from .wrn28_10_ln import wrn28_10_ln
+        return wrn28_10_ln(num_classes=num_classes)
     if n == 'resnet18':
         from .resnet import ResNet, BasicBlock
-        return ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes)
-    if n in ('wrn_16_8', 'wrn16_8', 'wideresnet16_8'):
+        return _maybe_ln(ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes), norm)
+    if n in ('wrn_16_8', 'wrn16_8'):
         from .wide_resnet import Wide_ResNet
-        return Wide_ResNet(16, 8, 0.3, num_classes=num_classes)
+        return _maybe_ln(Wide_ResNet(16, 8, 0.3, num_classes=num_classes), norm)
+    if n in ('cifar_wrn_28_10', 'wrn_28_10', 'wrn28_10'):
+        from .wrn28_10 import wrn
+        inner = wrn(depth=28, widen_factor=10, num_classes=num_classes)
+        if norm == 'ln':
+            from .norm_utils import replace_bn_with_gn
+            inner = replace_bn_with_gn(inner, num_groups=1)
+        return _LogitsOnly(inner)
     raise ValueError('unknown cifar100 model: ' + name)
 
+def _maybe_ln(model, norm):
+    if norm == 'ln':
+        from .norm_utils import replace_bn_with_gn
+        model = replace_bn_with_gn(model, num_groups=1)
+    return model
 
 def load_checkpoint(model, ckpt_path):
     ck = torch.load(ckpt_path, map_location='cpu', weights_only=False)
@@ -21,6 +47,10 @@ def load_checkpoint(model, ckpt_path):
             if k in ck and isinstance(ck[k], dict):
                 sd = ck[k]
                 break
-    sd = {(k[7:] if k.startswith('module.') else k): v for k, v in sd.items()}
-    model.load_state_dict(sd, strict=True)
+    sd = {k[7:] if k.startswith('module.') else k: v for (k, v) in sd.items()}
+    target = model.model if isinstance(model, _LogitsOnly) else model
+    target_keys = set(target.state_dict().keys())
+    if sd and all((k.startswith('model.') for k in sd)) and not all((k.startswith('model.') for k in target_keys)):
+        sd = {k[6:]: v for (k, v) in sd.items()}
+    target.load_state_dict(sd, strict=True)
     return model

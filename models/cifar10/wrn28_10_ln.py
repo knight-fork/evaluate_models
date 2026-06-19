@@ -1,29 +1,34 @@
 import torch
 import torch.nn as nn
-import torch.nn.init as init
 import torch.nn.functional as F
-import numpy as np
+
+
+class LayerNorm2d(nn.Module):
+    def __init__(self, num_channels, eps=1e-05):
+        super().__init__()
+        self.num_channels = num_channels
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(num_channels))
+        self.bias = nn.Parameter(torch.zeros(num_channels))
+
+    def forward(self, x):
+        u = x.mean([1, 2, 3], keepdim=True)
+        v = x.var([1, 2, 3], keepdim=True, unbiased=False)
+        x = (x - u) / torch.sqrt(v + self.eps)
+        return x * self.weight.view(1, -1, 1, 1) + self.bias.view(1, -1, 1, 1)
+
 
 def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=True)
 
-def conv_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        init.xavier_uniform_(m.weight, gain=np.sqrt(2))
-        init.constant_(m.bias, 0)
-    elif classname.find('BatchNorm') != -1:
-        init.constant_(m.weight, 1)
-        init.constant_(m.bias, 0)
 
 class wide_basic(nn.Module):
-
     def __init__(self, in_planes, planes, dropout_rate, stride=1):
         super(wide_basic, self).__init__()
-        self.bn1 = nn.BatchNorm2d(in_planes)
+        self.bn1 = LayerNorm2d(in_planes)
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, padding=1, bias=True)
         self.dropout = nn.Dropout(p=dropout_rate)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = LayerNorm2d(planes)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=True)
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != planes:
@@ -35,10 +40,10 @@ class wide_basic(nn.Module):
         out += self.shortcut(x)
         return out
 
-class Wide_ResNet(nn.Module):
 
+class Wide_ResNet_LN(nn.Module):
     def __init__(self, depth, widen_factor, dropout_rate=0.3, num_classes=10):
-        super(Wide_ResNet, self).__init__()
+        super(Wide_ResNet_LN, self).__init__()
         self.in_planes = 16
         assert (depth - 4) % 6 == 0, 'Wide-resnet depth should be 6n+4'
         n = (depth - 4) / 6
@@ -48,7 +53,7 @@ class Wide_ResNet(nn.Module):
         self.layer1 = self._wide_layer(wide_basic, nStages[1], n, dropout_rate, stride=1)
         self.layer2 = self._wide_layer(wide_basic, nStages[2], n, dropout_rate, stride=2)
         self.layer3 = self._wide_layer(wide_basic, nStages[3], n, dropout_rate, stride=2)
-        self.bn1 = nn.BatchNorm2d(nStages[3], momentum=0.9)
+        self.bn1 = LayerNorm2d(nStages[3])
         self.linear = nn.Linear(nStages[3], num_classes)
 
     def _wide_layer(self, block, planes, num_blocks, dropout_rate, stride):
@@ -70,14 +75,6 @@ class Wide_ResNet(nn.Module):
         out = self.linear(out)
         return out
 
-def WRN_28_10(num_classes=10):
-    return Wide_ResNet(28, 10, 0.3, num_classes)
 
-def WRN_16_8(num_classes=10):
-    return Wide_ResNet(16, 8, 0.3, num_classes)
-
-def WRN_40_2(num_classes=10):
-    return Wide_ResNet(40, 2, 0.3, num_classes)
-
-def WRN_16_2(num_classes=10):
-    return Wide_ResNet(16, 2, 0.3, num_classes)
+def wrn28_10_ln(num_classes=10):
+    return Wide_ResNet_LN(28, 10, 0.3, num_classes)
