@@ -9,14 +9,27 @@ class BatchAlignmentWrapper(nn.Module):
         self.norm = norm
         self.alpha = alpha
         self.eps = eps
-        self.num_groups = getattr(norm, 'num_groups', 1)
-        self.has_affine = getattr(norm, 'weight', None) is not None
+        if isinstance(norm, nn.GroupNorm):
+            self.norm_type = 'groupnorm'
+            self.num_groups = norm.num_groups
+        else:
+            self.norm_type = 'layernorm'
+            self.num_groups = 1
+        w = getattr(norm, 'weight', None)
+        self.has_affine = w is not None and w.dim() == 1
+
+    def _per_sample_norm(self, x):
+        if self.norm_type == 'layernorm':
+            u = x.mean([1, 2, 3], keepdim=True)
+            v = x.var([1, 2, 3], keepdim=True, unbiased=False)
+            return (x - u) / torch.sqrt(v + self.eps)
+        return F.group_norm(x, num_groups=self.num_groups, weight=None, bias=None, eps=self.eps)
 
     def forward(self, x):
         x_ln = self.norm(x)
         if x.size(0) <= 1 or self.alpha <= 0.0:
             return x_ln
-        x_normed = F.group_norm(x, num_groups=self.num_groups, weight=None, bias=None, eps=self.eps)
+        x_normed = self._per_sample_norm(x)
         batch_mean = x_normed.mean(dim=[0, 2, 3], keepdim=True)
         batch_var = x_normed.var(dim=[0, 2, 3], keepdim=True, unbiased=False)
         x_aligned = (x_normed - batch_mean) / torch.sqrt(batch_var + self.eps)
