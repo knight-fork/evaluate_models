@@ -1,6 +1,10 @@
+checkpoints
 checkpoints/
+checkpoints_drive
 checkpoints_drive/
+val5000
 val5000/
+data
 data/
 *.pth
 *.zip
