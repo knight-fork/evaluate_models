@@ -1,0 +1,13 @@
+checkpoints/
+checkpoints_drive/
+val5000/
+data/
+*.pth
+*.zip
+*.tar
+*.tar.gz
+*.JPEG
+*.jpg
+*.png
+__pycache__/
+*.pyc
